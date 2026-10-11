@@ -1,9 +1,8 @@
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.database import get_db
+from app.core.database import get_conn
 from app.modules.analytics import schemas
 from app.modules.analytics.repository import AnalyticsRepository
 from app.modules.analytics.service import AnalyticsService
@@ -13,12 +12,12 @@ from app.modules.students.service import StudentNotFoundError
 router = APIRouter(tags=["Analytics"])
 
 
-def get_repo(db: Session = Depends(get_db)) -> AnalyticsRepository:
-    return AnalyticsRepository(db)
+def get_repo(conn=Depends(get_conn)) -> AnalyticsRepository:
+    return AnalyticsRepository(conn)
 
 
-def get_analytics(db: Session = Depends(get_db)) -> AnalyticsService:
-    return AnalyticsService(db)
+def get_analytics(conn=Depends(get_conn)) -> AnalyticsService:
+    return AnalyticsService(conn)
 
 
 # ---------- Marks CRUD ----------
@@ -48,10 +47,18 @@ def list_marks(student_id: int, term: Optional[str] = None,
 @router.put("/marks/{mark_id}", response_model=schemas.MarkResponse)
 def update_mark(mark_id: int, payload: schemas.MarkUpdate,
                 repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_mark(mark_id)
+    fields = payload.model_dump(exclude_unset=True)
+    if "marks_obtained" in fields:
+        current = repo.get_mark(mark_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="mark not found")
+        total = fields.get("total_marks", current["total_marks"])
+        if fields["marks_obtained"] > total:
+            raise HTTPException(status_code=422, detail="marks_obtained cannot exceed total_marks")
+    obj = repo.update_mark(mark_id, **fields)
     if not obj:
         raise HTTPException(status_code=404, detail="mark not found")
-    return repo.update_mark(obj, **payload.model_dump(exclude_unset=True))
+    return obj
 
 
 # ---------- Attendance CRUD ----------
@@ -78,18 +85,17 @@ def list_attendance(student_id: int,
 @router.put("/attendance/{record_id}", response_model=schemas.AttendanceResponse)
 def update_attendance(record_id: int, payload: schemas.AttendanceUpdate,
                       repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_attendance(record_id)
+    obj = repo.update_attendance(record_id, **payload.model_dump(exclude_unset=True))
     if not obj:
         raise HTTPException(status_code=404, detail="attendance record not found")
-    return repo.update_attendance(obj, **payload.model_dump(exclude_unset=True))
+    return obj
 
 
 @router.delete("/attendance/{record_id}", status_code=204)
 def delete_attendance(record_id: int, repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_attendance(record_id)
-    if not obj:
+    if not repo.get_attendance(record_id):
         raise HTTPException(status_code=404, detail="attendance record not found")
-    repo.delete_attendance(obj)
+    repo.delete_attendance(record_id)
     return None
 
 
@@ -111,18 +117,17 @@ def list_behaviour(student_id: int,
 @router.put("/behaviour/{record_id}", response_model=schemas.BehaviourResponse)
 def update_behaviour(record_id: int, payload: schemas.BehaviourUpdate,
                      repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_behaviour(record_id)
+    obj = repo.update_behaviour(record_id, **payload.model_dump(exclude_unset=True))
     if not obj:
         raise HTTPException(status_code=404, detail="behaviour record not found")
-    return repo.update_behaviour(obj, **payload.model_dump(exclude_unset=True))
+    return obj
 
 
 @router.delete("/behaviour/{record_id}", status_code=204)
 def delete_behaviour(record_id: int, repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_behaviour(record_id)
-    if not obj:
+    if not repo.get_behaviour(record_id):
         raise HTTPException(status_code=404, detail="behaviour record not found")
-    repo.delete_behaviour(obj)
+    repo.delete_behaviour(record_id)
     return None
 
 
@@ -144,18 +149,17 @@ def list_activities(student_id: int,
 @router.put("/activities/{record_id}", response_model=schemas.ActivityResponse)
 def update_activity(record_id: int, payload: schemas.ActivityUpdate,
                     repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_activity(record_id)
+    obj = repo.update_activity(record_id, **payload.model_dump(exclude_unset=True))
     if not obj:
         raise HTTPException(status_code=404, detail="activity not found")
-    return repo.update_activity(obj, **payload.model_dump(exclude_unset=True))
+    return obj
 
 
 @router.delete("/activities/{record_id}", status_code=204)
 def delete_activity(record_id: int, repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_activity(record_id)
-    if not obj:
+    if not repo.get_activity(record_id):
         raise HTTPException(status_code=404, detail="activity not found")
-    repo.delete_activity(obj)
+    repo.delete_activity(record_id)
     return None
 
 
@@ -184,8 +188,7 @@ def class_leaderboard(standard: str, limit: int = Query(default=10, ge=1, le=100
 
 @router.delete("/marks/{mark_id}", status_code=204)
 def delete_mark(mark_id: int, repo: AnalyticsRepository = Depends(get_repo)):
-    obj = repo.get_mark(mark_id)
-    if not obj:
+    if not repo.get_mark(mark_id):
         raise HTTPException(status_code=404, detail="mark not found")
-    repo.delete_mark(obj)
+    repo.delete_mark(mark_id)
     return None

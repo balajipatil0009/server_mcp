@@ -1,3 +1,4 @@
+import enum
 from datetime import date
 from datetime import date as date_cls  # aliased binding: a field literally named "date"
                                      # typed as Optional[date] breaks inside a
@@ -6,12 +7,26 @@ from datetime import date as date_cls  # aliased binding: a field literally name
                                      # JSON key, and DB column all as "date".
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, field_validator
 
-from app.modules.analytics.model import ActivityCategory, AttendanceStatus
 from app.modules.students.schemas import Page  # re-export for controller use
 
-__all__ = ["Page"]
+__all__ = ["Page", "AttendanceStatus", "ActivityCategory"]
+
+
+class AttendanceStatus(str, enum.Enum):
+    present = "present"
+    absent = "absent"
+    leave = "leave"
+
+
+class ActivityCategory(str, enum.Enum):
+    sports = "sports"
+    arts = "arts"
+    tech = "tech"
+    academics_club = "academics_club"
+    social = "social"
+    other = "other"
 
 # ---------- Marks ----------
 
@@ -42,7 +57,6 @@ class MarkUpdate(BaseModel):
 
 
 class MarkResponse(MarkCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: int
 
 
@@ -64,7 +78,6 @@ class AttendanceUpdate(BaseModel):
 
 
 class AttendanceResponse(AttendanceCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: int
 
 
@@ -104,7 +117,6 @@ class BehaviourUpdate(BaseModel):
 
 
 class BehaviourResponse(BehaviourCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: int
 
 
@@ -135,7 +147,6 @@ class ActivityUpdate(BaseModel):
 
 
 class ActivityResponse(ActivityCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: int
 
 

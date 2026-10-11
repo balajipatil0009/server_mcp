@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Generic, List, Optional, TypeVar
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, field_validator
 
 T = TypeVar("T")
 
@@ -107,8 +107,6 @@ class StudentUpdate(BaseModel):
 
 
 class StudentResponse(StudentBase):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

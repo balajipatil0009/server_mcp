@@ -1,12 +1,9 @@
 from collections import defaultdict
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
-
 from app.modules.analytics import schemas
-from app.modules.analytics.model import AttendanceStatus
 from app.modules.analytics.repository import AnalyticsRepository
-from app.modules.students.model import Student
+from app.modules.students.repository import StudentRepository
 from app.modules.students.service import StudentNotFoundError
 
 
@@ -32,12 +29,13 @@ class AnalyticsService:
     W_BEHAVIOUR = 0.10
     W_CURRICULUM = 0.10
 
-    def __init__(self, db: Session):
-        self.db = db
-        self.repo = AnalyticsRepository(db)
+    def __init__(self, conn):
+        self.conn = conn
+        self.repo = AnalyticsRepository(conn)
+        self.students = StudentRepository(conn)
 
-    def _require_student(self, student_id: int) -> Student:
-        obj = self.db.query(Student).filter(Student.id == student_id).first()
+    def _require_student(self, student_id: int) -> dict:
+        obj = self.students.get_by_id(student_id)
         if not obj:
             raise StudentNotFoundError(f"student {student_id} not found")
         return obj
@@ -53,9 +51,9 @@ class AnalyticsService:
         per_term = defaultdict(list)
         total_pct = 0.0
         for m in marks:
-            pct = (m.marks_obtained / m.total_marks * 100) if m.total_marks else 0
-            per_subject[m.subject].append(pct)
-            per_term[m.term].append(pct)
+            pct = (m["marks_obtained"] / m["total_marks"] * 100) if m["total_marks"] else 0
+            per_subject[m["subject"]].append(pct)
+            per_term[m["term"]].append(pct)
             total_pct += pct
         avg = round(total_pct / len(marks), 2)
         subject_wise = [
@@ -70,9 +68,9 @@ class AnalyticsService:
 
     def _attendance(self, student_id: int):
         rows = self.repo.list_attendance(student_id)
-        present = sum(1 for r in rows if r.status == AttendanceStatus.present)
-        absent = sum(1 for r in rows if r.status == AttendanceStatus.absent)
-        leave = sum(1 for r in rows if r.status == AttendanceStatus.leave)
+        present = sum(1 for r in rows if r["status"] == schemas.AttendanceStatus.present.value)
+        absent = sum(1 for r in rows if r["status"] == schemas.AttendanceStatus.absent.value)
+        leave = sum(1 for r in rows if r["status"] == schemas.AttendanceStatus.leave.value)
         pct = round(present / len(rows) * 100, 2) if rows else 0.0
         return schemas.AttendanceSummary(
             total=len(rows), present=present, absent=absent,
@@ -85,8 +83,8 @@ class AnalyticsService:
             return schemas.BehaviourSummary(
                 average_score=0.0, total_records=0, latest_remarks=[]
             )
-        avg = round(sum(r.score for r in rows) / len(rows), 2)
-        remarks = [r.remark for r in rows[:5] if r.remark]
+        avg = round(sum(r["score"] for r in rows) / len(rows), 2)
+        remarks = [r["remark"] for r in rows[:5] if r["remark"]]
         return schemas.BehaviourSummary(
             average_score=avg, total_records=len(rows), latest_remarks=remarks
         )
@@ -95,15 +93,14 @@ class AnalyticsService:
         rows = self.repo.list_activities(student_id)
         by_cat = defaultdict(int)
         for r in rows:
-            key = r.category.value if hasattr(r.category, "value") else str(r.category)
-            by_cat[key] += r.points
+            by_cat[str(r["category"])] += r["points"]
         return schemas.CurriculumSummary(
-            total_points=sum(r.points for r in rows),
+            total_points=sum(r["points"] for r in rows),
             total_activities=len(rows),
             by_category=dict(by_cat),
         )
+
     def get_student_analytics(self, student_id: int, term=None):
-        from typing import List as _List
         student = self._require_student(student_id)
         academics = self._academics(student_id, term)
         attendance = self._attendance(student_id)
@@ -116,7 +113,7 @@ class AnalyticsService:
             + attendance.presenty_pct * self.W_ATTENDANCE
             + behaviour_pct * self.W_BEHAVIOUR
             + curriculum_pct * self.W_CURRICULUM, 2)
-        flags: _List[str] = []
+        flags: List[str] = []
         if academics.average_pct >= 85:
             flags.append("academic-excellent")
         if attendance.presenty_pct < 75 and attendance.total > 0:
@@ -130,19 +127,19 @@ class AnalyticsService:
         if not flags:
             flags.append("steady")
         return schemas.StudentAnalyticsResponse(
-            student_id=student.id, student_name=student.name,
-            standard=student.standard, term=term, academics=academics,
+            student_id=student["id"], student_name=student["name"],
+            standard=student["standard"], term=term, academics=academics,
             attendance=attendance, behaviour=behaviour,
             curriculum=curriculum, overall_performance_score=overall,
             flags=flags)
 
     def get_class_summary(self, standard: str):
-        students = self.db.query(Student).filter(Student.standard == standard).all()
+        students = self.students.list(standard=standard, page=1, size=100000)[0]
         if not students:
             return schemas.ClassSummaryResponse(
                 standard=standard, students=0, class_average_pct=0.0,
                 class_attendance_pct=0.0, topper=None, at_risk=[])
-        scored = [self.get_student_analytics(s.id) for s in students]
+        scored = [self.get_student_analytics(s["id"]) for s in students]
         avg_pct = round(sum(x.academics.average_pct for x in scored) / len(scored), 2)
         avg_att = round(sum(x.attendance.presenty_pct for x in scored) / len(scored), 2)
         top = max(scored, key=lambda x: x.overall_performance_score)
@@ -161,9 +158,9 @@ class AnalyticsService:
             at_risk=at_risk)
 
     def get_leaderboard(self, standard: str, limit: int = 10):
-        students = self.db.query(Student).filter(Student.standard == standard).all()
+        students = self.students.list(standard=standard, page=1, size=100000)[0]
         ranked = sorted(
-            (self.get_student_analytics(s.id) for s in students),
+            (self.get_student_analytics(s["id"]) for s in students),
             key=lambda x: x.overall_performance_score, reverse=True)
         return [
             {"rank": i + 1, "student_id": r.student_id,
@@ -172,5 +169,3 @@ class AnalyticsService:
              "average_pct": r.academics.average_pct,
              "presenty_pct": r.attendance.presenty_pct}
             for i, r in enumerate(ranked[:limit])]
-
-

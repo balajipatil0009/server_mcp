@@ -9,9 +9,10 @@ import argparse
 import random
 from datetime import date, timedelta
 
-from app.core.database import Base, SessionLocal, engine
-from app.modules.analytics.model import ActivityCategory, AttendanceStatus
+from app.core.database import conn_scope
+from app.core.schema import init_db
 from app.modules.analytics.repository import AnalyticsRepository
+from app.modules.analytics.schemas import ActivityCategory, AttendanceStatus
 from app.modules.students.schemas import StudentCreate
 from app.modules.students.service import StudentService
 
@@ -59,23 +60,20 @@ def main():
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        svc = StudentService(db)
-        repo = AnalyticsRepository(db)
+    init_db()
+    with conn_scope() as conn:
+        svc = StudentService(conn)
+        repo = AnalyticsRepository(conn)
         if args.reset:
-            from app.modules.analytics.model import (Attendance, Behaviour,
-                                                     CurriculumActivity, Mark)
-            from app.modules.students.model import Student
-            for m in (Mark, Attendance, Behaviour, CurriculumActivity):
-                db.query(m).delete()
-            db.query(Student).delete()
-            db.commit()
+            with conn.cursor() as cur:
+                # Children first (FK-safe order; students last).
+                for table in ("marks", "attendance", "behaviour",
+                              "curriculum_activities", "students"):
+                    cur.execute(f"DELETE FROM {table}")
             print("Reset: wiped all data")
-        used = {s.phone for s in db.query(
-            __import__("app.modules.students.model",
-                       fromlist=["Student"]).Student).all()}
+        with conn.cursor() as cur:
+            cur.execute("SELECT phone FROM students")
+            used = {r["phone"] for r in cur.fetchall()}
         today = date.today()
         profiles = ["topper", "average", "struggler", "sporty", "irregular"]
 
@@ -93,7 +91,7 @@ def main():
             profile = rng.choice(profiles)
             sid = svc.create_student(StudentCreate(
                 name=name, phone=gen_phone(rng, used),
-                standard=forced_std or rng.choice(STANDARDS))).id
+                standard=forced_std or rng.choice(STANDARDS)))["id"]
             base = {"topper": rng.uniform(82, 97),
                     "struggler": rng.uniform(28, 52),
                     "sporty": rng.uniform(55, 72)}.get(
@@ -147,10 +145,7 @@ def main():
                 n += 1
         print(f"Seeded {n} random students (seed={args.seed}). "
               "Open http://127.0.0.1:8000/ui/ to browse.")
-    finally:
-        db.close()
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,26 +1,15 @@
-"""Validate: /ui serves frontend + seed logic works (throwaway SQLite)."""
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+"""Validate: /ui serves frontend + seed logic works (dedicated MySQL test DB)."""
+import os
+os.environ["DB_NAME"] = "school_db_test"
+
 from fastapi.testclient import TestClient
 
-from app.core.database import Base, get_db
-import app.main as main_mod
+from tests_db import prepare_test_db
 
-engine = create_engine("sqlite:///./_test_ui.db", connect_args={"check_same_thread": False})
-TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
+prepare_test_db()
 
+import app.main as main_mod  # noqa: E402  (reads DB_NAME at import time)
 
-def override_db():
-    db = TestingSession()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-main_mod.app.dependency_overrides[get_db] = override_db
 client = TestClient(main_mod.app, raise_server_exceptions=False)
 
 # 1. UI static pages
@@ -55,6 +44,8 @@ js = pathlib.Path("frontend/app.js").read_text(encoding="utf-8")
 html = "".join(pathlib.Path(f"frontend/{p}").read_text(encoding="utf-8")
                for p in ["index.html", "students.html", "analytics.html", "class.html"])
 for ep in re.findall(r'"/([a-z][^"`\s${]*)"', html):
+    if ep == "docs":
+        continue  # nav link to the Swagger UI at /docs, not an API call
     full = "/api/v1/" + ep.split("?")[0].split("${")[0]
     assert full.rstrip("/") in (
         "/api/v1/students", "/api/v1/students/", "/api/v1/marks",

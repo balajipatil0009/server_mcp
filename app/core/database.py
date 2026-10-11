@@ -1,20 +1,61 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+"""Raw MySQL access via PyMySQL — no ORM.
+
+Single seam: `get_connection()` builds a `DictCursor` connection
+(rows come back as plain dicts).
+
+Two lifecycle helpers share one rule — commit on success, rollback on
+error, close always:
+- `get_conn()` is a plain generator for FastAPI `Depends(get_conn)`.
+  (It must stay a bare generator function: FastAPI detects `yield`
+  dependencies via introspection, which a `@contextmanager` wrapper hides.)
+- `conn_scope()` is the `with`-block twin for MCP tools, seed.py and tests.
+"""
+from contextlib import contextmanager
+from typing import Iterator
+
+import pymysql
+import pymysql.cursors
 
 from app.core.config import settings
 
-# pymysql driver against local MySQL
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+def get_connection():
+    """Open a new raw PyMySQL connection using the current settings."""
+    return pymysql.connect(
+        host=settings.DB_HOST,
+        port=settings.DB_PORT,
+        user=settings.DB_USER,
+        password=settings.DB_PASSWORD,
+        database=settings.DB_NAME,
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False,
+        charset="utf8mb4",
+    )
 
-Base = declarative_base()
 
-
-def get_db():
-    """FastAPI dependency: yields a DB session per request."""
-    db = SessionLocal()
+def get_conn():
+    """FastAPI dependency: yield one transactional connection per request."""
+    conn = get_connection()
     try:
-        yield db
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        db.close()
+        conn.close()
+
+
+@contextmanager
+def conn_scope() -> Iterator[pymysql.connections.Connection]:
+    """`with` block version of `get_conn()` for non-request code
+    (MCP tools, seed.py, tests). Same commit / rollback / close rule."""
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()

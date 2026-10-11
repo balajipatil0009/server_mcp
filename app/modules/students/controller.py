@@ -1,9 +1,8 @@
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_conn
 from app.modules.students import schemas
 from app.modules.students.service import (
     DuplicatePhoneError,
@@ -14,8 +13,8 @@ from app.modules.students.service import (
 router = APIRouter(prefix="/students", tags=["Students"])
 
 
-def get_service(db: Session = Depends(get_db)) -> StudentService:
-    return StudentService(db)
+def get_service(conn=Depends(get_conn)) -> StudentService:
+    return StudentService(conn)
 
 
 @router.post("", response_model=schemas.StudentResponse, status_code=status.HTTP_201_CREATED)

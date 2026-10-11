@@ -1,30 +1,15 @@
-"""E2E validation on throwaway SQLite (no MySQL needed)."""
+"""E2E validation against a dedicated MySQL test database (school_db_test)."""
 import os
-os.environ["DB_NAME"] = "__unused_for_sqlite_override__"
+os.environ["DB_NAME"] = "school_db_test"
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.core.database import Base, get_db
-from app.main import app
+from tests_db import prepare_test_db
 
-# Throwaway SQLite for validation only
-engine = create_engine("sqlite:///./_test_validate.db", connect_args={"check_same_thread": False})
-TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
+prepare_test_db()
 
+from app.main import app  # noqa: E402  (reads DB_NAME at import time)
 
-def override_db():
-    db = TestingSession()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_db
 client = TestClient(app, raise_server_exceptions=False)
 
 # 1. Create student
@@ -45,23 +30,38 @@ print("3. invalid phone 422 OK")
 
 # 4. List + filter + search
 r = client.get("/api/v1/students", params={"standard": "8-A", "search": "aarav"})
-assert r.status_code == 200 and len(r.json()) == 1, r.text
+assert r.status_code == 200 and len(r.json()["items"]) == 1, r.text
 print("4. list/filter OK")
 
 # 5. Update + get
 r = client.put(f"/api/v1/students/{sid}", json={"standard": "8-B"})
 assert r.status_code == 200 and r.json()["standard"] == "8-B", r.text
-print("5. update OK")
+r = client.get(f"/api/v1/students/{sid}")
+assert r.status_code == 200 and r.json()["standard"] == "8-B", r.text
+# updated_at must move on write (MySQL has no ON UPDATE clause for it).
+assert r.json()["updated_at"] >= r.json()["created_at"], r.text
+print("5. update OK (updated_at maintained)")
 
 # 6. Marks + bulk
 r = client.post("/api/v1/marks", json={"student_id": sid, "subject": "Maths",
                 "marks_obtained": 85, "total_marks": 100, "term": "Term1"})
 assert r.status_code == 201, r.text
+mark_id = r.json()["id"]
 r = client.post("/api/v1/marks/bulk", json={"records": [
     {"student_id": sid, "subject": "Science", "marks_obtained": 70, "total_marks": 100, "term": "Term1"},
     {"student_id": sid, "subject": "English", "marks_obtained": 90, "total_marks": 100, "term": "Term1"}]})
 assert r.status_code == 201, r.text
 print("6. marks OK")
+
+# 6b. Marks guard: obtained > total -> 422, and update of missing mark -> 404
+r = client.post("/api/v1/marks", json={"student_id": sid, "subject": "Maths",
+                "marks_obtained": 120, "total_marks": 100, "term": "Term1"})
+assert r.status_code == 422, r.text
+r = client.put("/api/v1/marks/999999999", json={"subject": "Maths"})
+assert r.status_code == 404, r.text
+r = client.put(f"/api/v1/marks/{mark_id}", json={"exam_type": "mid-term"})
+assert r.status_code == 200 and r.json()["exam_type"] == "mid-term", r.text
+print("6b. marks guards OK")
 
 # 7. Attendance + behaviour + activities
 from datetime import date, timedelta
@@ -98,6 +98,8 @@ r = client.delete(f"/api/v1/students/{sid}")
 assert r.status_code == 204, r.text
 r = client.get(f"/api/v1/students/{sid}")
 assert r.status_code == 404, r.text
-print("11. delete OK")
+r = client.get("/api/v1/marks", params={"student_id": sid})
+assert r.status_code == 200 and r.json()["total_rows"] == 0, r.text
+print("11. delete OK (analytics rows cascaded)")
 
 print("\nALL VALIDATION TESTS PASSED")
