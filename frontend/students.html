@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Students — Student Analytics</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav><b class="logo">🎓 SchoolTrack</b>
+<a data-p="home" href="index.html">Dashboard</a>
+<a data-p="students" href="students.html">Students</a>
+<a data-p="analytics" href="analytics.html">Student Analytics</a>
+<a data-p="class" href="class.html">Class View</a>
+<a href="/docs" target="_blank">Swagger ↗</a></nav>
+<div class="wrap">
+<h1>Students</h1>
+<p class="sub">CRUD — only name, phone, standard. Click a name for full analytics.</p>
+<div class="card" style="margin-bottom:14px">
+<h3 id="formTitle">Add student</h3>
+<div class="row">
+<label>Name<input id="fName" placeholder="Aarav Sharma"></label>
+<label>Phone<input id="fPhone" placeholder="9876543210"></label>
+<label>Standard<input id="fStd" placeholder="8-A"></label>
+<button onclick="save()">Save</button>
+<button class="ghost" onclick="resetForm()">Clear</button>
+</div><div id="m" class="msg"></div>
+</div>
+<div class="card" style="margin-bottom:14px">
+<div class="row">
+<label>Filter standard<input id="qStd" placeholder="8-A"></label>
+<label>Search name<input id="qSearch" placeholder="aarav"></label>
+<button onclick="load()">Search</button>
+<button class="ghost" onclick="document.querySelector('#qStd').value='';document.querySelector('#qSearch').value='';load()">Reset</button>
+</div></div>
+<div class="card"><table><thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Standard</th><th></th></tr></thead>
+<tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+</div>
+<script src="app.js"></script>
+<script>
+nav("students"); let editId = null;
+async function load() {
+  const p = new URLSearchParams();
+  const s = document.querySelector("#qStd").value.trim();
+  const q = document.querySelector("#qSearch").value.trim();
+  if (s) p.set("standard", s); if (q) p.set("search", q);
+  p.set("limit", "100");
+  try {
+    const list = await api("/students?" + p);
+    document.querySelector("#rows").innerHTML = list.length ? list.map(s =>
+      `<tr><td>${s.id}</td><td><a class="link" href="analytics.html?id=${s.id}">${esc(s.name)}</a></td>
+       <td>${esc(s.phone)}</td><td><span class="tag">${esc(s.standard)}</span></td>
+       <td><button class="ghost" onclick="edit(${s.id})">Edit</button>
+       <button class="danger" onclick="del(${s.id})">Del</button></td></tr>`).join("")
+      : `<tr><td colspan="5">No students. Add one above or run seed.py</td></tr>`;
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function save() {
+  const body = { name: document.querySelector("#fName").value,
+    phone: document.querySelector("#fPhone").value,
+    standard: document.querySelector("#fStd").value };
+  try {
+    if (editId) { await api(`/students/${editId}`, { method: "PUT", body }); msg("#m", "Updated ✅"); }
+    else { await api("/students", { method: "POST", body }); msg("#m", "Created ✅"); }
+    resetForm(); load();
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function edit(id) {
+  const s = await api(`/students/${id}`);
+  document.querySelector("#fName").value = s.name;
+  document.querySelector("#fPhone").value = s.phone;
+  document.querySelector("#fStd").value = s.standard;
+  editId = id; document.querySelector("#formTitle").textContent = `Edit #${id}`;
+}
+async function del(id) {
+  if (!confirm(`Delete student #${id}? Analytics cascade-deletes.`)) return;
+  await api(`/students/${id}`, { method: "DELETE" }); load();
+}
+function resetForm() {
+  ["#fName","#fPhone","#fStd"].forEach(s => document.querySelector(s).value = "");
+  editId = null; document.querySelector("#formTitle").textContent = "Add student";
+}
+load();
+</script>
+</body>
+</html>

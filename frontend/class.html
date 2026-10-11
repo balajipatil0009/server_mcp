@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class View — Student Analytics</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav><b class="logo">🎓 SchoolTrack</b>
+<a data-p="home" href="index.html">Dashboard</a>
+<a data-p="students" href="students.html">Students</a>
+<a data-p="analytics" href="analytics.html">Student Analytics</a>
+<a data-p="class" href="class.html">Class View</a>
+<a href="/docs" target="_blank">Swagger ↗</a></nav>
+<div class="wrap">
+<h1>Class View</h1>
+<p class="sub">Full leaderboard + quick data entry (marks / attendance / behaviour / activity).</p>
+<div class="card" style="margin-bottom:14px"><div class="row">
+<label>Standard<input id="std" value="8-A"></label>
+<label>Top N<input id="lim" type="number" value="10" min="1" max="100"></label>
+<button onclick="load()">Load</button>
+</div><div id="m" class="msg"></div></div>
+<div class="grid g3">
+<div class="card"><h3>➕ Add mark</h3><div class="row">
+<label>Student ID<input id="mkSid" type="number"></label>
+<label>Subject<input id="mkSub" value="Maths"></label>
+<label>Marks<input id="mkMarks" type="number" value="80"></label>
+<label>Term<input id="mkTerm" value="Term1"></label>
+<button onclick="addMark()">Add</button></div></div>
+<div class="card"><h3>🗓️ Mark attendance</h3><div class="row">
+<label>Student ID<input id="atSid" type="number"></label>
+<label>Date<input id="atDate" type="date"></label>
+<label>Status<select id="atSt"><option>present</option><option>absent</option><option>leave</option></select></label>
+<button onclick="addAtt()">Save</button></div></div>
+<div class="card"><h3>⭐ Behaviour / 🎯 Activity</h3><div class="row">
+<label>Student ID<input id="bhSid" type="number"></label>
+<label>Score 1-10<input id="bhScore" type="number" value="8" min="1" max="10"></label>
+<label>Remark<input id="bhRemark" placeholder="Good"></label>
+<button onclick="addBh()">Add behaviour</button></div>
+<div class="row" style="margin-top:8px">
+<label>Activity<input id="acName" value="Cricket"></label>
+<label>Category<select id="acCat"><option>sports</option><option>arts</option><option>tech</option><option>academics_club</option><option>social</option><option>other</option></select></label>
+<label>Points<input id="acPts" type="number" value="20"></label>
+<button onclick="addAc()">Add activity</button></div></div>
+</div>
+<div class="card" style="margin-top:14px"><h3>Leaderboard</h3>
+<table><thead><tr><th>#</th><th>Name</th><th>Avg %</th><th>Presenty %</th><th>Score</th></tr></thead>
+<tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+</div>
+<script src="app.js"></script>
+<script>
+nav("class");
+document.querySelector("#atDate").value = new Date().toISOString().slice(0,10);
+async function load() {
+  const std = document.querySelector("#std").value.trim() || "8-A";
+  const lim = document.querySelector("#lim").value || 10;
+  try {
+    const lb = await api(`/analytics/class/${encodeURIComponent(std)}/leaderboard?limit=${lim}`);
+    document.querySelector("#rows").innerHTML = lb.map(r =>
+      `<tr><td>${r.rank}</td><td><a class="link" href="analytics.html?id=${r.student_id}">${esc(r.student_name)}</a></td>
+       <td>${r.average_pct}%</td><td>${r.presenty_pct}%</td><td><b>${r.overall_performance_score}</b></td></tr>`).join("")
+      || `<tr><td colspan="5">No data for ${esc(std)}</td></tr>`;
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function addMark() {
+  try {
+    await api("/marks", { method: "POST", body: {
+      student_id: +document.querySelector("#mkSid").value,
+      subject: document.querySelector("#mkSub").value,
+      marks_obtained: +document.querySelector("#mkMarks").value,
+      total_marks: 100, term: document.querySelector("#mkTerm").value }});
+    msg("#m", "Mark added ✅"); load();
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function addAtt() {
+  try {
+    await api("/attendance", { method: "POST", body: {
+      student_id: +document.querySelector("#atSid").value,
+      date: document.querySelector("#atDate").value,
+      status: document.querySelector("#atSt").value }});
+    msg("#m", "Attendance saved ✅"); load();
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function addBh() {
+  try {
+    await api("/behaviour", { method: "POST", body: {
+      student_id: +document.querySelector("#bhSid").value,
+      score: +document.querySelector("#bhScore").value,
+      remark: document.querySelector("#bhRemark").value || null }});
+    msg("#m", "Behaviour added ✅"); load();
+  } catch (e) { msg("#m", e.message, false); }
+}
+async function addAc() {
+  try {
+    await api("/activities", { method: "POST", body: {
+      student_id: +document.querySelector("#bhSid").value,
+      activity_name: document.querySelector("#acName").value,
+      category: document.querySelector("#acCat").value,
+      points: +document.querySelector("#acPts").value }});
+    msg("#m", "Activity added ✅"); load();
+  } catch (e) { msg("#m", e.message, false); }
+}
+load();
+</script>
+</body>
+</html>

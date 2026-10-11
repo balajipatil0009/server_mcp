@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — Student Analytics</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav><b class="logo">🎓 SchoolTrack</b>
+<a data-p="home" href="index.html">Dashboard</a>
+<a data-p="students" href="students.html">Students</a>
+<a data-p="analytics" href="analytics.html">Student Analytics</a>
+<a data-p="class" href="class.html">Class View</a>
+<a href="/docs" target="_blank">Swagger ↗</a></nav>
+<div class="wrap">
+<h1>Dashboard</h1>
+<p class="sub">School at a glance — pick a class to see summary + leaderboard.</p>
+<div class="card" style="margin-bottom:14px"><div class="row">
+<label>Standard<input id="std" value="8-A"></label>
+<button onclick="load()">Load class</button>
+</div><div id="m" class="msg"></div></div>
+<div id="out" class="grid g2"><div class="card">Hit “Load class”.</div></div>
+</div>
+<script src="app.js"></script>
+<script>
+nav("home");
+async function load() {
+  const std = document.querySelector("#std").value.trim() || "8-A";
+  try {
+    const [s, lb] = await Promise.all([
+      api(`/analytics/class/${encodeURIComponent(std)}/summary`),
+      api(`/analytics/class/${encodeURIComponent(std)}/leaderboard?limit=5`),
+    ]);
+    document.querySelector("#out").innerHTML = `
+      <div class="card"><h3>Students</h3><div class="big">${s.students}</div><p class="sub">in ${esc(s.standard)}</p></div>
+      <div class="card"><h3>Class average</h3><div class="big acc">${s.class_average_pct}%</div>
+        <div class="bar"><i style="width:${s.class_average_pct}%"></i></div></div>
+      <div class="card"><h3>Class presenty</h3><div class="big ok">${s.class_attendance_pct}%</div>
+        <div class="bar"><i style="width:${s.class_attendance_pct}%"></i></div></div>
+      <div class="card"><h3>Topper</h3>${s.topper ? `<div class="big">${esc(s.topper.student_name)}</div>
+        <p class="sub">score ${s.topper.score}</p>` : "—"}</div>
+      <div class="card"><h3>🏆 Top 5 leaderboard</h3><table>
+        <thead><tr><th>#</th><th>Name</th><th>Score</th></tr></thead><tbody>
+        ${lb.map(r=>`<tr><td>${r.rank}</td><td><a class="link" href="analytics.html?id=${r.student_id}">${esc(r.student_name)}</a></td><td>${r.overall_performance_score}</td></tr>`).join("") || `<tr><td colspan="3">No data</td></tr>`}
+        </tbody></table></div>
+      <div class="card"><h3>⚠️ At risk (${s.at_risk.length})</h3>
+        ${s.at_risk.map(r=>`<span class="pill bad">${esc(r.student_name)} · ${r.average_pct}% · ⏰${r.presenty_pct}%</span>`).join("") || '<p class="sub">Nobody at risk 🎉</p>'}</div>`;
+  } catch (e) { msg("#m", e.message, false); }
+}
+load();
+</script>
+</body>
+</html>

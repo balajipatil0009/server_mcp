@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Analytics — Student Analytics</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav><b class="logo">🎓 SchoolTrack</b>
+<a data-p="home" href="index.html">Dashboard</a>
+<a data-p="students" href="students.html">Students</a>
+<a data-p="analytics" href="analytics.html">Student Analytics</a>
+<a data-p="class" href="class.html">Class View</a>
+<a href="/docs" target="_blank">Swagger ↗</a></nav>
+<div class="wrap">
+<h1>Student Analytics</h1>
+<p class="sub">Marks, presenty %, behaviour, curriculum points + overall score.</p>
+<div class="card" style="margin-bottom:14px"><div class="row">
+<label>Student ID<input id="sid" type="number" value="1"></label>
+<label>Term<select id="term"><option value="">All terms</option><option>Term1</option><option>Term2</option></select></label>
+<button onclick="load()">Load analytics</button>
+</div><div id="m" class="msg"></div></div>
+<div id="out"><div class="card">Enter an ID and hit Load — or open from <a class="link" href="students.html">Students</a>.</div></div>
+</div>
+<script src="app.js"></script>
+<script>
+nav("analytics");
+const q = new URLSearchParams(location.search);
+if (q.get("id")) document.querySelector("#sid").value = q.get("id");
+async function load() {
+  const id = document.querySelector("#sid").value;
+  const t = document.querySelector("#term").value;
+  try {
+    const a = await api(`/students/${id}/analytics${t ? "?term=" + t : ""}`);
+    const subs = a.academics.subject_wise.map(s =>
+      `<tr><td>${esc(s.subject)}</td><td>${s.average_pct}%</td><td>${s.exams}</td></tr>`).join("") || `<tr><td colspan="3">No marks yet</td></tr>`;
+    document.querySelector("#out").innerHTML = `
+    <div class="grid g2" style="margin-bottom:14px">
+      <div class="card"><h3>Student</h3><div class="big">${esc(a.student_name)}</div>
+        <span class="tag">${esc(a.standard)}</span> <span class="tag">#${a.student_id}</span>
+        <div style="margin-top:8px">${a.flags.map(f=>`<span class="pill">🏷️ ${esc(f)}</span>`).join("")}</div></div>
+      <div class="card"><h3>Overall performance</h3><div class="big acc">${a.overall_performance_score}</div>
+        <div class="bar"><i style="width:${a.overall_performance_score}%"></i></div>
+        <p class="sub">60% academics · 20% attendance · 10% behaviour · 10% curriculum</p></div>
+      <div class="card"><h3>Academics — ${a.academics.average_pct}% (Grade ${a.academics.grade})</h3>
+        <div class="bar"><i style="width:${a.academics.average_pct}%"></i></div>
+        <p class="sub">${a.academics.total_exams} exams · trend ${esc(JSON.stringify(a.academics.trend_by_term))}</p></div>
+      <div class="card"><h3>Presenty — ${a.attendance.presenty_pct}%</h3>
+        <div class="bar"><i style="width:${a.attendance.presenty_pct}%"></i></div>
+        <p class="sub">✅ ${a.attendance.present} · ❌ ${a.attendance.absent} · 🏖️ ${a.attendance.leave} (total ${a.attendance.total})</p></div>
+      <div class="card"><h3>Behaviour — ${a.behaviour.average_score}/10 (${a.behaviour.total_records} records)</h3>
+        ${a.behaviour.latest_remarks.map(r=>`<span class="pill">💬 ${esc(r)}</span>`).join("") || '<p class="sub">No remarks</p>'}</div>
+      <div class="card"><h3>Curriculum — ${a.curriculum.total_points} pts (${a.curriculum.total_activities} activities)</h3>
+        ${Object.entries(a.curriculum.by_category).map(([k,v])=>`<span class="pill">${esc(k)}: ${v}</span>`).join("") || '<p class="sub">No activities</p>'}</div>
+    </div>
+    <div class="card"><h3>Subject-wise marks</h3>
+      <table><thead><tr><th>Subject</th><th>Avg %</th><th>Exams</th></tr></thead><tbody>${subs}</tbody></table></div>`;
+  } catch (e) { msg("#m", e.message, false); }
+}
+if (q.get("id")) load();
+</script>
+</body>
+</html>
